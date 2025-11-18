@@ -1,0 +1,5 @@
+pydub
+pyaudio
+audioop-lts
+mido
+numpy
