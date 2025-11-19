@@ -7,14 +7,17 @@ Built entirely from scratch using numpy DSP and custom synthesizers.
 ## 📦 Setup + Run
 
 ```bash
+# Install dependencies (includes pygame and pyaudio for playback)
 pip install -r requirements.txt
 
 # Generate a static track
 python track02.py
 
-# Run the INFINITE generator (with visualizations!)
+# Run the INFINITE generator (with visualizations + real-time audio!)
 python super_metroid_infinite.py
 ```
+
+**Note:** Recording starts automatically when you launch the infinite generator! Press SPACE to stop/start recording.
 
 ## 🎮 Super Metroid Infinite
 

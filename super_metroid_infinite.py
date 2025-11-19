@@ -17,9 +17,14 @@ from collections import defaultdict
 from pathlib import Path
 import threading
 import queue
+import io
+import pyaudio
 
 # Import our synthesizers from track02
 from track02 import Synthesizer, DrumMachine, midi_to_freq
+
+# Import the chaos effect visualizer
+from chaos_effect import ChaosEffect
 
 
 class MIDIPatternAnalyzer:
@@ -279,126 +284,27 @@ class PatternMixer:
         return bar
 
 
-class AudioVisualizer:
-    """Audio-reactive visualization based on chaos_effect.py"""
+class AudioReactiveChaos(ChaosEffect):
+    """Extended ChaosEffect that responds to audio parameters"""
     
     def __init__(self, width, height):
-        self.width = width
-        self.height = height
-        self.time = 0
-        
-        # Audio reactive parameters
-        self.audio_energy = 0
-        self.bass_energy = 0
-        self.mid_energy = 0
-        self.high_energy = 0
-        
-        # Visual elements
-        self.particles = []
-        self.max_particles = 100
-        self.waveform_history = []
-        
-        # Rotating elements
-        self.rotation = 0
+        super().__init__(width, height)
+        self.audio_energy = 0.5
+        self.bass_energy = 0.5
         
     def update_audio_data(self, energy=0.5, bass=0.5, mid=0.5, high=0.5):
         """Update with audio parameters"""
         self.audio_energy = energy
         self.bass_energy = bass
-        self.mid_energy = mid
-        self.high_energy = high
-    
-    def update(self):
-        """Update animation"""
-        self.time += 1
-        self.rotation += 0.02 + self.audio_energy * 0.05
         
-        # Spawn particles based on audio
-        if random.random() < self.audio_energy * 0.3:
-            self.spawn_particle()
+        # Modulate chaos parameters based on audio
+        self.max_particles = int(150 + bass * 100)
+        self.kaleidoscope_segments = int(6 + high * 6)
+        self.lissajous_a = 3 + int(mid * 4)
         
-        # Update particles
-        for particle in self.particles[:]:
-            particle['x'] += particle['vx']
-            particle['y'] += particle['vy']
-            particle['life'] -= 0.02
-            particle['hue'] = (particle['hue'] + 2) % 360
-            
-            if particle['life'] <= 0:
-                self.particles.remove(particle)
-    
-    def spawn_particle(self):
-        """Spawn new particle"""
-        if len(self.particles) < self.max_particles:
-            angle = random.uniform(0, 2 * math.pi)
-            speed = random.uniform(2, 6) * (1 + self.audio_energy)
-            
-            particle = {
-                'x': self.width / 2,
-                'y': self.height / 2,
-                'vx': math.cos(angle) * speed,
-                'vy': math.sin(angle) * speed,
-                'size': random.uniform(3, 8),
-                'hue': random.uniform(0, 360),
-                'life': 1.0
-            }
-            self.particles.append(particle)
-    
-    def hsv_to_rgb(self, h, s, v):
-        """Convert HSV to RGB"""
-        import colorsys
-        r, g, b = colorsys.hsv_to_rgb(h / 360.0, s, v)
-        return (int(r * 255), int(g * 255), int(b * 255))
-    
-    def draw(self, surface):
-        """Draw visualization"""
-        # Background based on bass
-        bg_intensity = int(20 + self.bass_energy * 30)
-        surface.fill((bg_intensity, bg_intensity // 2, bg_intensity // 2))
-        
-        # Center pulsing circle (bass reactive)
-        center_x, center_y = self.width // 2, self.height // 2
-        radius = int(50 + self.bass_energy * 100)
-        hue = (self.time * 2) % 360
-        color = self.hsv_to_rgb(hue, 0.8, 0.9)
-        pygame.draw.circle(surface, color, (center_x, center_y), radius, 5)
-        
-        # Rotating bars (mid reactive)
-        num_bars = 8
-        for i in range(num_bars):
-            angle = self.rotation + i * (2 * math.pi / num_bars)
-            length = 80 + self.mid_energy * 150
-            x1 = center_x + math.cos(angle) * 60
-            y1 = center_y + math.sin(angle) * 60
-            x2 = center_x + math.cos(angle) * length
-            y2 = center_y + math.sin(angle) * length
-            
-            bar_hue = (hue + i * 45) % 360
-            bar_color = self.hsv_to_rgb(bar_hue, 0.9, 0.8)
-            pygame.draw.line(surface, bar_color, (int(x1), int(y1)), (int(x2), int(y2)), 4)
-        
-        # Outer ring (high reactive)
-        ring_radius = int(180 + self.high_energy * 80)
-        ring_color = self.hsv_to_rgb((hue + 180) % 360, 0.7, 0.7)
-        pygame.draw.circle(surface, ring_color, (center_x, center_y), ring_radius, 3)
-        
-        # Particles
-        for particle in self.particles:
-            p_color = self.hsv_to_rgb(particle['hue'], 1.0, particle['life'])
-            size = int(particle['size'] * particle['life'])
-            if size > 0:
-                pygame.draw.circle(surface, p_color, (int(particle['x']), int(particle['y'])), size)
-        
-        # Waveform-like pattern at bottom
-        waveform_y = self.height - 50
-        points = []
-        for x in range(0, self.width, 10):
-            offset = math.sin(x * 0.02 + self.time * 0.1) * 20 * self.audio_energy
-            points.append((x, waveform_y + offset))
-        
-        if len(points) > 1:
-            wave_color = self.hsv_to_rgb((hue + 90) % 360, 0.8, 0.9)
-            pygame.draw.lines(surface, wave_color, False, points, 3)
+        # Spawn extra particles on energy spikes
+        if energy > 0.8:
+            self.spawn_particles(int((energy - 0.8) * 50))
 
 
 class InfiniteGenerator:
@@ -415,7 +321,7 @@ class InfiniteGenerator:
         self.mixer = None  # Will be set after analysis
         
         # State
-        self.is_recording = False
+        self.is_recording = True  # Start recording by default!
         self.should_stop = False
         self.bar_counter = 0
         self.audio_buffer = AudioSegment.silent(duration=0)
@@ -431,8 +337,14 @@ class InfiniteGenerator:
         self.visualizer = None
         self.clock = None
         
-        # Audio queue for visualization
-        self.audio_queue = queue.Queue(maxsize=5)
+        # PyAudio for playback
+        self.pyaudio_instance = None
+        self.audio_stream = None
+        
+        # Audio buffer queue (producer-consumer pattern)
+        self.audio_queue = queue.Queue(maxsize=8)  # Buffer up to 8 bars
+        self.generation_thread = None
+        self.stop_generation = threading.Event()
         
     def initialize(self):
         """Initialize everything"""
@@ -451,7 +363,17 @@ class InfiniteGenerator:
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption("Super Metroid Infinite")
         self.clock = pygame.time.Clock()
-        self.visualizer = AudioVisualizer(self.width, self.height)
+        self.visualizer = AudioReactiveChaos(self.width, self.height)
+        
+        # Initialize PyAudio for playback
+        self.pyaudio_instance = pyaudio.PyAudio()
+        self.audio_stream = self.pyaudio_instance.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=44100,
+            output=True,
+            frames_per_buffer=1024
+        )
         
         print("\n✅ Ready!")
         print("\n🎹 Controls:")
@@ -459,13 +381,29 @@ class InfiniteGenerator:
         print("   ESC - Quit")
         print("   Click button - Toggle recording")
         
+        # Start recording immediately
+        self.start_recording()
+        print("   🔴 Recording started automatically!")
+        
+        # Start background audio generation thread
+        self.stop_generation.clear()
+        self.generation_thread = threading.Thread(target=self._generate_audio_loop, daemon=True)
+        self.generation_thread.start()
+        print("   🎵 Background audio generation started!")
+        
     def start_recording(self):
         """Start recording to WAV file"""
-        timestamp = int(time.time())
-        self.current_file = f"sm_infinite_{timestamp}.wav"
-        self.audio_buffer = AudioSegment.silent(duration=0)
-        self.is_recording = True
-        print(f"\n🔴 RECORDING: {self.current_file}")
+        if not self.is_recording:
+            timestamp = int(time.time())
+            self.current_file = f"sm_infinite_{timestamp}.wav"
+            self.audio_buffer = AudioSegment.silent(duration=0)
+            self.is_recording = True
+            print(f"\n🔴 RECORDING: {self.current_file}")
+        else:
+            # Already recording, just create new file
+            timestamp = int(time.time())
+            self.current_file = f"sm_infinite_{timestamp}.wav"
+            self.audio_buffer = AudioSegment.silent(duration=0)
     
     def stop_recording(self):
         """Stop recording and save file"""
@@ -477,32 +415,48 @@ class InfiniteGenerator:
             self.current_file = None
         self.is_recording = False
     
-    def generate_and_record_bar(self):
-        """Generate one bar and add to recording"""
-        # Randomly change patterns every 8-16 bars
-        if self.bar_counter % random.randint(8, 16) == 0:
-            self.mixer.randomize_patterns()
+    def _generate_audio_loop(self):
+        """Background thread that continuously generates audio bars"""
+        bar_counter = 0
+        pattern_change_interval = random.randint(8, 16)
         
-        # Generate bar
-        bar = self.mixer.generate_bar(self.bar_counter)
-        
-        # Master the bar
-        bar = bar.normalize(headroom=1.5)
-        
-        # Add to buffer if recording
-        if self.is_recording:
-            self.audio_buffer += bar
-        
-        # Update visualization (fake audio energy based on bar content)
-        energy = random.uniform(0.6, 0.95)
-        bass = random.uniform(0.5, 0.9)
-        mid = random.uniform(0.4, 0.8)
-        high = random.uniform(0.3, 0.7)
-        self.visualizer.update_audio_data(energy, bass, mid, high)
-        
-        self.bar_counter += 1
-        
-        return bar
+        while not self.stop_generation.is_set():
+            try:
+                # Randomly change patterns
+                if bar_counter % pattern_change_interval == 0 and bar_counter > 0:
+                    self.mixer.randomize_patterns()
+                    pattern_change_interval = random.randint(8, 16)
+                
+                # Generate bar
+                bar = self.mixer.generate_bar(bar_counter)
+                
+                # Master the bar
+                bar = bar.normalize(headroom=1.5)
+                
+                # Calculate audio energy for visualization
+                energy = random.uniform(0.6, 0.95)
+                bass = 0.8 if self.mixer.active_bass else 0.3
+                mid = 0.7 if self.mixer.active_melody else 0.4
+                high = 0.6 if self.mixer.active_arp else 0.3
+                
+                # Put in queue with metadata
+                self.audio_queue.put({
+                    'bar': bar,
+                    'energy': energy,
+                    'bass': bass,
+                    'mid': mid,
+                    'high': high,
+                    'bar_num': bar_counter
+                }, timeout=1.0)
+                
+                bar_counter += 1
+                
+            except queue.Full:
+                # Queue is full, wait a bit
+                time.sleep(0.1)
+            except Exception as e:
+                print(f"⚠️  Generation error: {e}")
+                time.sleep(0.1)
     
     def draw_ui(self):
         """Draw UI elements"""
@@ -561,53 +515,109 @@ class InfiniteGenerator:
         """Main loop"""
         self.initialize()
         
-        # Generate first bar in background
-        print("\n🎵 Generating music...")
+        print("\n🎵 Buffering...")
         
         running = True
         space_was_pressed = False
         
-        while running:
-            # Handle events
+        # Wait for initial buffer
+        while self.audio_queue.qsize() < 3 and running:
+            time.sleep(0.1)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
+        
+        print("🎵 Playing!")
+        
+        while running:
+            try:
+                # Get next bar from queue (with timeout to check events)
+                audio_data = self.audio_queue.get(timeout=0.5)
+                bar = audio_data['bar']
+                
+                # Update bar counter
+                self.bar_counter = audio_data['bar_num']
+                
+                # Add to recording buffer
+                if self.is_recording:
+                    self.audio_buffer += bar
+                
+                # Update visualization parameters
+                self.visualizer.update_audio_data(
+                    audio_data['energy'],
+                    audio_data['bass'],
+                    audio_data['mid'],
+                    audio_data['high']
+                )
+                
+                # Play audio (this will block for ~bar duration)
+                # We'll update visualization in a non-blocking way
+                raw_data = bar.raw_data
+                chunk_size = 2048  # Small chunks for responsiveness
+                
+                for i in range(0, len(raw_data), chunk_size):
+                    # Check for quit events while playing
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            running = False
+                            break
+                        elif event.type == pygame.KEYDOWN:
+                            if event.key == pygame.K_ESCAPE:
+                                running = False
+                                break
+                            elif event.key == pygame.K_SPACE:
+                                if not space_was_pressed:
+                                    self.toggle_recording()
+                                    space_was_pressed = True
+                        elif event.type == pygame.KEYUP:
+                            if event.key == pygame.K_SPACE:
+                                space_was_pressed = False
+                        elif event.type == pygame.MOUSEBUTTONDOWN:
+                            if event.button == 1:
+                                button_rect = (self.width - 50, 10, 40, 40)
+                                if self.check_button_click(event.pos, button_rect):
+                                    self.toggle_recording()
+                    
+                    if not running:
+                        break
+                    
+                    # Play chunk
+                    chunk = raw_data[i:i+chunk_size]
+                    self.audio_stream.write(chunk)
+                    
+                    # Update visualization
+                    self.visualizer.update()
+                    self.visualizer.draw(self.screen)
+                    self.draw_ui()
+                    pygame.display.flip()
+                    
+            except queue.Empty:
+                # No audio ready, just update visualization
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
                         running = False
-                    elif event.key == pygame.K_SPACE:
-                        if not space_was_pressed:
-                            self.toggle_recording()
-                            space_was_pressed = True
-                elif event.type == pygame.KEYUP:
-                    if event.key == pygame.K_SPACE:
-                        space_was_pressed = False
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:  # Left click
-                        button_rect = (self.width - 50, 10, 40, 40)
-                        if self.check_button_click(event.pos, button_rect):
-                            self.toggle_recording()
-            
-            # Generate audio bar
-            bar = self.generate_and_record_bar()
-            
-            # Update visualization
-            self.visualizer.update()
-            
-            # Draw
-            self.visualizer.draw(self.screen)
-            button_rect = self.draw_ui()
-            
-            pygame.display.flip()
-            
-            # Note: In real-time, we'd want to play audio too, but for now
-            # we're just generating and optionally recording
-            # Limit frame rate
-            self.clock.tick(2)  # ~2 bars per second at 128 BPM
+                
+                self.visualizer.update()
+                self.visualizer.draw(self.screen)
+                self.draw_ui()
+                pygame.display.flip()
+                self.clock.tick(60)
         
         # Clean up
+        print("\n🛑 Stopping...")
+        self.stop_generation.set()
+        if self.generation_thread:
+            self.generation_thread.join(timeout=2.0)
+        
         if self.is_recording:
             self.stop_recording()
+        
+        # Close audio stream
+        if self.audio_stream:
+            self.audio_stream.stop_stream()
+            self.audio_stream.close()
+        if self.pyaudio_instance:
+            self.pyaudio_instance.terminate()
         
         pygame.quit()
         print("\n👋 Goodbye!")
