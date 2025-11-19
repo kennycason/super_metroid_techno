@@ -27,14 +27,22 @@ The **infinite generator** is where things get wild! It:
 - 🔀 Randomly combines basslines, melodies, pads, and arpeggios
 - 🎨 Creates a constantly evolving, never-repeating track
 - 🎚️ Applies random effects (reverb, delay, distortion)
-- 📺 Shows real-time audio-reactive visualizations (640x480)
+- 📺 Shows real-time audio-reactive chaos visualizations (640x480)
 - 💾 Records to WAV files with timestamps
+- 🎵 **Dynamic sections**: Intro → Verse → Chorus → Breakdown with different intensities
+- 🔊 **Prominent choruses** with layered leads and big sound
+- 🎸 **Slower bass changes** for more coherent groove (16-32 bars)
 
 ### Controls:
 - **SPACE** or **Click Button** - Toggle recording
+- **V** - Toggle visualization mode (640x480 full / 320x120 minimal)
 - **ESC** - Quit
 
 The generator will save files as `sm_infinite_<timestamp>.wav` when you're recording!
+
+Watch the screen for section changes (INTRO/VERSE/**CHORUS**/BREAKDOWN) - choruses hit HARD! 🔥
+
+**Pro tip:** Press **V** to switch to minimal mode (320x120, black screen) for lower CPU usage during long recordings! 💻
 
 ## 🎧 More Music
 
